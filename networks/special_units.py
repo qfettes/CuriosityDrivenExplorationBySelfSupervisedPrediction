@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks.layers import NoisyLinear
-from networks.network_bodies import SimpleBody, AtariBody
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def make_one_hot(labels, C=2):

@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from agents.BaseAgent import BaseAgent
-from networks.networks import ActorCritic
+from networks.networks import ActorCriticAtari 
 from utils.RolloutStorage import RolloutStorage
 
 from timeit import default_timer as timer
@@ -19,9 +19,6 @@ class Model(BaseAgent):
 
         self.recurrent_policy = config.recurrent_policy_grad
         self.gru_size = config.gru_size
-
-        self.noisy = config.USE_NOISY_NETS
-        self.sigma_init = config.SIGMA_INIT
 
         self.gamma = config.GAMMA
         self.lr = config.LR
@@ -62,8 +59,7 @@ class Model(BaseAgent):
 
 
     def declare_networks(self):
-        self.model = ActorCritic(self.num_feats, self.num_actions, self.conv_out, self.recurrent_policy, self.gru_size, 
-                        self.noisy, self.sigma_init)
+        self.model = ActorCriticAtari(self.num_feats, self.num_actions, self.conv_out, self.recurrent_policy, self.gru_size)
         
 
     def get_action(self, s, states, masks, deterministic=False):
@@ -117,8 +113,7 @@ class Model(BaseAgent):
         action_loss = -(advantages.detach() * action_log_probs).mean()
 
         loss = action_loss + self.value_loss_weight * value_loss
-        if not self.noisy:
-            loss -= self.entropy_loss_weight * dist_entropy
+        loss -= self.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 
@@ -131,7 +126,6 @@ class Model(BaseAgent):
         self.optimizer.step()
 
         #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
-        #self.save_sigma_param_magnitudes()
 
         self.model.sample_noise()
         return value_loss.item(), action_loss.item(), dist_entropy.item()

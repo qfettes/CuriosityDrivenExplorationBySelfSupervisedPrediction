@@ -30,13 +30,10 @@ class Model(A2C):
     def compute_loss(self, sample):
         observations_batch, states_batch, states_spacial_batch, states_temporal_batch, actions_batch, return_batch, masks_batch, masks_temporal_batch, old_action_log_probs_batch, adv_targ = sample
 
-        values, action_log_probs, dist_entropy, states, states_spacial = self.evaluate_actions(observations_batch,
+        values, action_log_probs, dist_entropy, states = self.evaluate_actions(observations_batch,
                                                             actions_batch,
                                                             states_batch,
-                                                            masks_batch,
-                                                            states_spacial_batch,
-                                                            states_temporal_batch,
-                                                            masks_temporal_batch)
+                                                            masks_batch)
 
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
         surr1 = ratio * adv_targ
@@ -46,8 +43,7 @@ class Model(A2C):
         value_loss = F.mse_loss(return_batch, values)
 
         loss = action_loss + self.value_loss_weight * value_loss
-        if not self.noisy:
-            loss -= self.entropy_loss_weight * dist_entropy
+        loss -= self.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 
@@ -87,7 +83,6 @@ class Model(A2C):
         total_loss = value_loss_epoch + action_loss_epoch + dist_entropy_epoch
 
         #self.save_loss(total_loss, action_loss_epoch, value_loss_epoch, dist_entropy_epoch)
-        #self.save_sigma_param_magnitudes()
 
         self.model.sample_noise()
         return value_loss_epoch, action_loss_epoch, dist_entropy_epoch

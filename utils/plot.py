@@ -248,7 +248,7 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 100, 100, 1), smo
     if ipynb:
         plt.show()
     else:
-        plt.savefig(save_filename)
+        plt.savefig(os.path.join(folder, save_filename))
     plt.clf()
     plt.close()
     
@@ -281,7 +281,7 @@ def plot_reward(folder, game, name, num_steps, bin_size=10, smooth=1, time=None,
     if ipynb:
         plt.show()
     else:
-        plt.savefig(save_filename)
+        plt.savefig(os.path.join(folder, save_filename))
     plt.clf()
     plt.close()
     
