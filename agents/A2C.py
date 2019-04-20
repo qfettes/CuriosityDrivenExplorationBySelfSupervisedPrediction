@@ -127,7 +127,6 @@ class Model(BaseAgent):
 
         #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
 
-        self.model.sample_noise()
         return value_loss.item(), action_loss.item(), dist_entropy.item()
 
     '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):

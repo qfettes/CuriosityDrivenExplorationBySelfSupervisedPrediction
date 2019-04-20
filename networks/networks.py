@@ -7,7 +7,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ########Actor Critic Architectures#########
 class ActorCriticSMB(nn.Module):
-    def __init__(self, input_shape, num_actions, use_gru=False, gru_size=512):
+    def __init__(self, input_shape, num_actions, use_gru=False, gru_size=256):
         super(ActorCriticSMB, self).__init__()
         self.use_gru = use_gru
         self.gru_size = gru_size
@@ -16,16 +16,15 @@ class ActorCriticSMB(nn.Module):
                     lambda x: nn.init.constant_(x, 0),
                     nn.init.calculate_gain('relu'))
 
-        self.conv1 = init_(nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4))
-        self.conv2 = init_(nn.Conv2d(32, 32, kernel_size=4, stride=2))
-        self.conv3 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=1))
-        self.conv4 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=1))
+        self.conv1 = init_(nn.Conv2d(input_shape[0], 32, kernel_size=3, stride=2, padding=1))
+        self.conv2 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1))
+        self.conv3 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1))
+        self.conv4 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1))
 
         #TODO: Left off here
 
         if use_gru:
-            self.fc1 = init_(nn.Linear(self.feature_size(input_shape), 512))
-            self.gru = nn.GRUCell(512, self.gru_size)
+            self.gru = nn.GRUCell(self.feature_size(input_shape), self.gru_size)
 
             nn.init.orthogonal_(self.gru.weight_ih.data)
             nn.init.orthogonal_(self.gru.weight_hh.data)
@@ -50,14 +49,14 @@ class ActorCriticSMB(nn.Module):
         self.train()
 
     def forward(self, inputs, states, masks):
-        x = F.relu(self.conv1(inputs))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.elu(self.conv1(inputs))
+        x = F.elu(self.conv2(x))
+        x = F.elu(self.conv3(x))
+        x = F.elu(self.conv4(x))
 
         if self.use_gru:
             x = x.view(x.size(0), -1)
             if inputs.size(0) == states.size(0):
-                x = F.relu(self.fc1(x))
                 x = states = self.gru(x, states * masks)
             else:
                 # x is a (T, N, -1) tensor that has been flatten to (T * N, -1)
@@ -65,7 +64,6 @@ class ActorCriticSMB(nn.Module):
                 T = int(x.size(0) / N)
 
                 # unflatten
-                x = F.relu(self.fc1(x))
                 x = x.view(T, N, x.size(1))
 
                 # Same deal with masks

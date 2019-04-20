@@ -29,8 +29,8 @@ from utils.hyperparameters import PolicyConfig
 parser = argparse.ArgumentParser(description='RL')
 parser.add_argument('--algo', default='a2c',
 					help='algorithm to use: a2c | ppo')
-parser.add_argument('--lr', type=float, default=7e-4,
-					help='learning rate (default: 7e-4)')
+parser.add_argument('--lr', type=float, default=1e-4,
+					help='learning rate (default: 1e-3)')
 parser.add_argument('--gamma', type=float, default=0.99,
 					help='discount factor for rewards (default: 0.99)')
 parser.add_argument('--use-gae', action='store_true', default=False,
@@ -41,28 +41,26 @@ parser.add_argument('--entropy-coef', type=float, default=0.01,
 					help='entropy term coefficient (default: 0.01)')
 parser.add_argument('--value-loss-coef', type=float, default=0.5,
 					help='value loss coefficient (default: 0.5)')
-parser.add_argument('--max-grad-norm', type=float, default=0.5,
-					help='max norm of gradients (default: 0.5)')
-parser.add_argument('--num-processes', type=int, default=16,
-					help='how many training CPU processes to use (default: 16)')
-parser.add_argument('--num-steps', type=int, default=5,
-					help='number of forward steps in A2C (default: 5)')
+parser.add_argument('--max-grad-norm', type=float, default=40.0,
+					help='max norm of gradients (default: 40.0)')
+parser.add_argument('--num-processes', type=int, default=20,
+					help='how many training CPU processes to use (default: 20)')
+parser.add_argument('--num-steps', type=int, default=20,
+					help='number of forward steps in A2C (default: 20)')
 parser.add_argument('--ppo-epoch', type=int, default=3,
 					help='number of ppo epochs (default: 3)')
 parser.add_argument('--num-mini-batch', type=int, default=32,
 					help='number of batches for ppo (default: 32)')
 parser.add_argument('--clip-param', type=float, default=0.1,
 					help='ppo clip parameter (default: 0.1)')
-parser.add_argument('--num-frames', type=int, default=1e7,
-					help='number of frames to train (default: 1e7)')
+parser.add_argument('--num-frames', type=int, default=1e8,
+					help='number of frames to train (default: 1e8)')
 parser.add_argument('--env-name', default='SuperMarioBros-1-1-v0',
 					help='environment to train on (default: SuperMarioBros-1-1-v0)')
-parser.add_argument('--recurrent-policy', action='store_true', default=False,
-					help='use a recurrent policy')
+parser.add_argument('--recurrent-policy', action='store_false', default=True,
+					help='cancel recurrent policy')
 parser.add_argument('--gru-size', type=int, default=256,
 					help='number of output units for main gru (default: 256)')
-parser.add_argument('--conv-out', type=int, default=32,
-					help='number of output filters for final convolutional layer (default: 32)')
 parser.add_argument('--reward-type', type=str, default='none',
                     choices=('none', 'sparse', 'dense'),
 					help='Type of reward. Choices = {none, sparse, dense}. (default: none))')
@@ -70,10 +68,14 @@ parser.add_argument('--stack-frames', type=int, default=4,
 					help='Number of frames to stack (default: 4)')
 parser.add_argument('--action-repeat', type=int, default=6,
 					help='Number of times to repeat action (default: 6)')
+parser.add_argument('--icm-beta', type=float, default=0.2,
+					help='Weight used by ICM to trade off forward/backward model optim (default: 0.2)')
+parser.add_argument('--icm-lambda', type=float, default=0.1,
+					help='Weight placed by ICM of PG loss (default: 0.1)')
 args = parser.parse_args()
 
 if args.algo == 'a2c':
-    from agents.A2C import Model
+    from agents.ICM_A2C import Model
 elif args.algo == 'ppo':
     from agents.PPO import Model
 else:
@@ -89,6 +91,10 @@ config = PolicyConfig()
 config.algo = args.algo
 config.env_id = args.env_name
 
+#icm
+config.icm_beta = args.icm_beta
+config.icm_lambda = args.icm_lambda
+
 #preprocessing
 config.stack_frames = args.stack_frames
 config.action_repeat = args.action_repeat
@@ -96,12 +102,7 @@ config.reward_type = args.reward_type
 
 #Recurrent control
 config.recurrent_policy_grad = args.recurrent_policy
-config.conv_out = args.conv_out
 config.gru_size = args.gru_size
-
-#Noisy Nets Control
-config.USE_NOISY_NETS = False
-config.SIGMA_INIT = 0.5
 
 #ppo control
 config.ppo_epoch = args.ppo_epoch
@@ -173,28 +174,33 @@ def train(config):
     obs = envs.reset()
     obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
 
-    model.rollouts.observations[0].copy_(obs)
+    model.config.rollouts.observations[0].copy_(obs)
     
     episode_rewards = np.zeros(config.num_agents, dtype=np.float)
     final_rewards = np.zeros(config.num_agents, dtype=np.float)
 
     start=timer()
 
-    print_step = 1
-    print_threshold = 100
+    print_threshold = 10
+
+    max_dist = np.zeros(config.num_agents)
     
     for frame_idx in range(1, config.MAX_FRAMES+1):
         for step in range(config.rollout):
             
             with torch.no_grad():
                 values, actions, action_log_prob, states = model.get_action(
-                                                            model.rollouts.observations[step],
-                                                            model.rollouts.states[step],
-                                                            model.rollouts.masks[step])
+                                                            model.config.rollouts.observations[step],
+                                                            model.config.rollouts.states[step],
+                                                            model.config.rollouts.masks[step])
             
             cpu_actions = actions.view(-1).cpu().numpy()
     
-            obs, reward, done, _ = envs.step(cpu_actions)
+            obs, reward, done, info = envs.step(cpu_actions)
+
+            for index, inf in enumerate(info):
+                max_dist[index] = max((max_dist[index], inf['x_pos']))
+
             obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
 
             episode_rewards += reward
@@ -208,18 +214,18 @@ def train(config):
 
             obs *= masks.view(-1, 1, 1, 1)
 
-            model.rollouts.insert(obs, states, actions.view(-1, 1), action_log_prob, values, rewards, masks)
+            model.config.rollouts.insert(obs, states, actions.view(-1, 1), action_log_prob, values, rewards, masks)
             
         with torch.no_grad():
-            next_value = model.get_values(model.rollouts.observations[-1],
-                                model.rollouts.states[-1],
-                                model.rollouts.masks[-1])
+            next_value = model.get_values(model.config.rollouts.observations[-1],
+                                model.config.rollouts.states[-1],
+                                model.config.rollouts.masks[-1])
 
-        model.rollouts.compute_returns(next_value, config.GAMMA)
+        #model.config.rollouts.compute_returns(next_value, config.GAMMA)
             
-        value_loss, action_loss, dist_entropy = model.update(model.rollouts)
+        value_loss, action_loss, dist_entropy = model.update(model.config.rollouts, next_value)
         
-        model.rollouts.after_update()
+        model.config.rollouts.after_update()
 
         if frame_idx % print_threshold == 0:
             #save_model
@@ -229,9 +235,10 @@ def train(config):
             #print
             end = timer()
             total_num_steps = (frame_idx + 1) * config.num_agents * config.rollout
-            print("Updates {}, num timesteps {}, FPS {}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, entropy {:.5f}, value loss {:.5f}, policy loss {:.5f}".
+            print("Updates {}, num timesteps {}, FPS {}, max distance {:.1f}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, entropy {:.5f}, value loss {:.5f}, policy loss {:.5f}".
                 format(frame_idx, total_num_steps,
                        int(total_num_steps / (end - start)),
+                       np.mean(max_dist),
                        np.mean(final_rewards),
                        np.median(final_rewards),
                        np.min(final_rewards),

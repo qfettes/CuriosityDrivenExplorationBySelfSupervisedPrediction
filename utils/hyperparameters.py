@@ -7,6 +7,10 @@ class PolicyConfig(object):
         self.conv_out = 64
         self.reward_type = 'dense'
 
+        #icm
+        self.icm_beta = 0.2
+        self.icm_lambda = 0.1
+
         #meta infor
         self.algo = None
         self.env_id = None

@@ -84,5 +84,4 @@ class Model(A2C):
 
         #self.save_loss(total_loss, action_loss_epoch, value_loss_epoch, dist_entropy_epoch)
 
-        self.model.sample_noise()
         return value_loss_epoch, action_loss_epoch, dist_entropy_epoch
