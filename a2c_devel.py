@@ -29,18 +29,18 @@ from utils.hyperparameters import PolicyConfig
 parser = argparse.ArgumentParser(description='RL')
 parser.add_argument('--print-threshold', type=int, default=100,
 					help='print progress and plot every print-threshold timesteps (default: 100)')
-parser.add_argument('--algo', default='a2c',
-					help='algorithm to use: a2c | ppo')
+parser.add_argument('--algo', default='icm',
+					help='algorithm to use: icm | a2c')
 parser.add_argument('--lr', type=float, default=1e-4,
-					help='learning rate (default: 1e-3)')
+					help='learning rate (default: 1e-4)')
 parser.add_argument('--gamma', type=float, default=0.99,
 					help='discount factor for rewards (default: 0.99)')
-parser.add_argument('--use-gae', action='store_true', default=False,
+parser.add_argument('--use-gae', action='store_true', default=True,
 					help='use generalized advantage estimation')
-parser.add_argument('--tau', type=float, default=0.95,
-					help='gae parameter (default: 0.95)')
-parser.add_argument('--entropy-coef', type=float, default=0.01,
-					help='entropy term coefficient (default: 0.01)')
+parser.add_argument('--tau', type=float, default=1.0,
+					help='gae parameter (default: 1.0)')
+parser.add_argument('--entropy-coef', type=float, default=0.0005,
+					help='entropy term coefficient (default: 0.0005)')
 parser.add_argument('--value-loss-coef', type=float, default=0.5,
 					help='value loss coefficient (default: 0.5)')
 parser.add_argument('--max-grad-norm', type=float, default=40.0,
@@ -70,16 +70,18 @@ parser.add_argument('--stack-frames', type=int, default=4,
 					help='Number of frames to stack (default: 4)')
 parser.add_argument('--action-repeat', type=int, default=6,
 					help='Number of times to repeat action (default: 6)')
-parser.add_argument('--icm-beta', type=float, default=0.2,
+parser.add_argument('--icm-loss-beta', type=float, default=0.2,
+					help='Weight used by ICM to trade off forward/backward model optim (default: 0.2)')
+parser.add_argument('--icm-prediction-beta', type=float, default=0.2,
 					help='Weight used by ICM to trade off forward/backward model optim (default: 0.2)')
 parser.add_argument('--icm-lambda', type=float, default=0.1,
 					help='Weight placed by ICM of PG loss (default: 0.1)')
 args = parser.parse_args()
 
-if args.algo == 'a2c':
+if args.algo == 'icm':
     from agents.ICM_A2C import Model
-elif args.algo == 'ppo':
-    from agents.PPO import Model
+elif args.algo == 'a2c':
+    from agents.A2C import Model
 else:
     print("INVALID ALGORITHM. ABORT.")
     exit()
@@ -94,7 +96,8 @@ config.algo = args.algo
 config.env_id = args.env_name
 
 #icm
-config.icm_beta = args.icm_beta
+config.icm_loss_beta = args.icm_loss_beta
+config.icm_prediction_beta = args.icm_prediction_beta
 config.icm_lambda = args.icm_lambda
 
 #preprocessing
@@ -229,8 +232,6 @@ def train(config):
             next_value = model.get_values(model.config.rollouts.observations[-1],
                                 model.config.rollouts.states[-1],
                                 model.config.rollouts.masks[-1])
-
-        #model.config.rollouts.compute_returns(next_value, config.GAMMA)
             
         value_loss, action_loss, dist_entropy = model.update(model.config.rollouts, next_value)
         

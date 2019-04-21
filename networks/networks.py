@@ -21,8 +21,6 @@ class ActorCriticSMB(nn.Module):
         self.conv3 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1))
         self.conv4 = init_(nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1))
 
-        #TODO: Left off here
-
         if use_gru:
             self.gru = nn.GRUCell(self.feature_size(input_shape), self.gru_size)
 
@@ -105,9 +103,8 @@ class ActorCriticSMB(nn.Module):
             return 1
 
 class ActorCriticAtari(nn.Module):
-    def __init__(self, input_shape, num_actions, conv_out=64, use_gru=False, gru_size=512):
+    def __init__(self, input_shape, num_actions, use_gru=False, gru_size=512):
         super(ActorCriticAtari, self).__init__()
-        self.conv_out = conv_out
         self.use_gru = use_gru
         self.gru_size = gru_size
 
@@ -117,7 +114,7 @@ class ActorCriticAtari(nn.Module):
 
         self.conv1 = init_(nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4))
         self.conv2 = init_(nn.Conv2d(32, 64, kernel_size=4, stride=2))
-        self.conv3 = init_(nn.Conv2d(64, self.conv_out, kernel_size=3, stride=1))
+        self.conv3 = init_(nn.Conv2d(64, 64, kernel_size=3, stride=1))
 
         if use_gru:
             self.fc1 = init_(nn.Linear(self.feature_size(input_shape), 512))

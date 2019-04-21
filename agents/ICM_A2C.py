@@ -6,14 +6,14 @@ import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 
-from agents.BaseAgent import BaseAgent
+from agents.A2C import Model as A2C_Model
 from networks.networks import ActorCriticSMB
 from networks.special_units import IC_Features, IC_ForwardModel_Head, IC_InverseModel_Head
 from utils.RolloutStorage import RolloutStorage
 
 from timeit import default_timer as timer
 
-class Model(BaseAgent):
+class Model(A2C_Model):
     def __init__(self, static_policy=False, env=None, config=None, log_dir='/tmp/gym'):
         super(Model, self).__init__(config=config, env=env, log_dir=log_dir)
         self.config = config
@@ -64,32 +64,6 @@ class Model(BaseAgent):
         self.ICMBackwardModel = IC_InverseModel_Head(self.ICMfeaturizer.feature_size()*2, self.num_actions)
         
 
-    def get_action(self, s, states, masks, deterministic=False):
-        logits, values, states = self.model(s, states, masks)
-        dist = torch.distributions.Categorical(logits=logits)
-
-        if deterministic:
-            actions = dist.probs.argmax(dim=1, keepdim=True)
-        else:
-            actions = dist.sample().view(-1, 1)
-
-        log_probs = F.log_softmax(logits, dim=1)
-        action_log_probs = log_probs.gather(1, actions)
-
-        return values, actions, action_log_probs, states
-
-    def evaluate_actions(self, s, actions, states, masks):
-        logits, values, states = self.model(s, states, masks)
-
-        dist = torch.distributions.Categorical(logits=logits)
-
-        log_probs = F.log_softmax(logits, dim=1)
-        action_log_probs = log_probs.gather(1, actions)
-
-        dist_entropy = dist.entropy().mean()
-
-        return values, action_log_probs, dist_entropy, states
-
     def icm_get_features(self, s):
         return self.ICMfeaturizer(s)
 
@@ -104,13 +78,7 @@ class Model(BaseAgent):
 
         return logits
 
-
-    def get_values(self, s, states, masks):
-        _, values, _ = self.model(s, states, masks)
-
-        return values
-
-    def compute_loss(self, rollouts, next_value=None):
+    def compute_loss(self, rollouts, next_value):
         obs_shape = rollouts.observations.size()[2:]
         action_shape = rollouts.actions.size()[-1]
         num_steps, num_processes, _ = rollouts.rewards.size()
@@ -123,13 +91,13 @@ class Model(BaseAgent):
         obs_diff = icm_obs_pred - phi[self.config.num_agents:]
 
         #add intrinsic reward
-        if next_value is not None:
-            with torch.no_grad():
-                intr_reward = obs_diff.pow(2).sqrt().sum(dim=1)
-                intr_reward = intr_reward.view(num_steps, num_processes, 1)
-            self.config.rollouts.rewards += intr_reward.detach()
-            self.config.rollouts.rewards = torch.clamp(self.config.rollouts.rewards, min=-1.0, max=1.0)
-            self.config.rollouts.compute_returns(next_value, self.config.GAMMA)
+        with torch.no_grad():
+            intr_reward = obs_diff.pow(2).sqrt().sum(dim=1)
+            intr_reward = self.config.icm_prediction_beta * intr_reward.view(num_steps, num_processes, 1)
+        self.config.rollouts.rewards += intr_reward.detach()
+        self.config.rollouts.rewards = torch.clamp(self.config.rollouts.rewards, min=-1.0, max=1.0)
+        
+        self.config.rollouts.compute_returns(next_value, self.config.GAMMA)
 
         values, action_log_probs, dist_entropy, states = self.evaluate_actions(
             rollouts.observations[:-1].view(-1, *obs_shape),
@@ -154,33 +122,14 @@ class Model(BaseAgent):
         loss = action_loss + self.config.value_loss_weight * value_loss
         loss *= self.config.icm_lambda
 
-        loss-= ((1.-self.config.icm_beta)*inverse_model_loss)
-        loss-= (self.config.icm_beta*forward_model_loss)
+        loss-= ((1.-self.config.icm_loss_beta)*inverse_model_loss)
+        loss-= (self.config.icm_loss_beta*forward_model_loss)
 
         loss -= self.config.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 
-    def update(self, rollout, next_value=None):
-        loss, action_loss, value_loss, dist_entropy = self.compute_loss(rollout, next_value)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_norm_max)
-        self.optimizer.step()
-
-        #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
-
-        return value_loss.item(), action_loss.item(), dist_entropy.item()
-
     def save_distance(self, max_dist, tstep):
         with open(os.path.join(self.log_dir, 'logs', 'max_dist.csv'), 'a') as f:
             writer = csv.writer(f)
             writer.writerow((tstep, max_dist))
-                
-
-    '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):
-        super(Model, self).save_loss(loss)
-        self.policy_losses.append(policy_loss)
-        self.value_losses.append(value_loss)
-        self.entropy_losses.append(entropy_loss)'''

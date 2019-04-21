@@ -14,44 +14,30 @@ from timeit import default_timer as timer
 class Model(BaseAgent):
     def __init__(self, static_policy=False, env=None, config=None, log_dir='/tmp/gym'):
         super(Model, self).__init__(config=config, env=env, log_dir=log_dir)
-        self.device = config.device
-        self.conv_out = config.conv_out
-
-        self.recurrent_policy = config.recurrent_policy_grad
-        self.gru_size = config.gru_size
-
-        self.gamma = config.GAMMA
-        self.lr = config.LR
-        self.num_agents = config.num_agents
-        self.value_loss_weight = config.value_loss_weight
-        self.entropy_loss_weight = config.entropy_loss_weight
-        self.rollout = config.rollout
-        self.grad_norm_max = config.grad_norm_max
-
+        self.config = config
         self.static_policy = static_policy
         self.num_feats = env.observation_space.shape
-        self.num_feats = (self.num_feats[0], *self.num_feats[1:])
         self.num_actions = env.action_space.n
         self.env = env
 
         self.declare_networks()
             
-        if not self.recurrent_policy:
-            self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.lr, alpha=0.99, eps=1e-5)
+        if not self.config.recurrent_policy_grad:
+            self.optimizer = optim.RMSprop(self.model.parameters(), lr=self.config.LR, alpha=0.99, eps=1e-5)
         else:
-            self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr, amsgrad=True)
+            self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.LR, amsgrad=True)
         
         #move to correct device
-        self.model = self.model.to(self.device)
+        self.model = self.model.to(self.config.device)
 
         if self.static_policy:
             self.model.eval()
         else:
             self.model.train()
 
-        self.rollouts = RolloutStorage(self.rollout, self.num_agents,
+        self.config.rollouts = RolloutStorage(self.config.rollout, self.config.num_agents,
             self.num_feats, self.env.action_space, self.model.state_size,
-            self.device, config.USE_GAE, config.gae_tau)
+            self.config.device, config.USE_GAE, config.gae_tau)
 
         self.value_losses = []
         self.entropy_losses = []
@@ -59,7 +45,7 @@ class Model(BaseAgent):
 
 
     def declare_networks(self):
-        self.model = ActorCriticAtari(self.num_feats, self.num_actions, self.conv_out, self.recurrent_policy, self.gru_size)
+        self.model = ActorCriticAtari(self.num_feats, self.num_actions, self.config.recurrent_policy_grad, self.config.gru_size)
         
 
     def get_action(self, s, states, masks, deterministic=False):
@@ -93,10 +79,12 @@ class Model(BaseAgent):
 
         return values
 
-    def compute_loss(self, rollouts):
+    def compute_loss(self, rollouts, next_value):
         obs_shape = rollouts.observations.size()[2:]
         action_shape = rollouts.actions.size()[-1]
         num_steps, num_processes, _ = rollouts.rewards.size()
+
+        self.config.rollouts.compute_returns(next_value, self.config.GAMMA)
 
         values, action_log_probs, dist_entropy, states = self.evaluate_actions(
             rollouts.observations[:-1].view(-1, *obs_shape),
@@ -112,22 +100,25 @@ class Model(BaseAgent):
 
         action_loss = -(advantages.detach() * action_log_probs).mean()
 
-        loss = action_loss + self.value_loss_weight * value_loss
-        loss -= self.entropy_loss_weight * dist_entropy
+        loss = action_loss + self.config.value_loss_weight * value_loss
+        loss -= self.config.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 
-    def update(self, rollout):
-        loss, action_loss, value_loss, dist_entropy = self.compute_loss(rollout)
+    def update(self, rollout, next_value):
+        loss, action_loss, value_loss, dist_entropy = self.compute_loss(rollout, next_value)
 
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.grad_norm_max)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_norm_max)
         self.optimizer.step()
 
         #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
 
         return value_loss.item(), action_loss.item(), dist_entropy.item()
+
+    def save_distance(self, max_dist, tstep):
+        pass
 
     '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):
         super(Model, self).save_loss(loss)

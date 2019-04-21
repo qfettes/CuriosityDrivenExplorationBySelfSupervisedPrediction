@@ -4,11 +4,11 @@ import math
 class PolicyConfig(object):
     def __init__(self):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.conv_out = 64
         self.reward_type = 'dense'
 
         #icm
-        self.icm_beta = 0.2
+        self.icm_loss_beta = 0.2
+        self.icm_prediction_beta = 0.01
         self.icm_lambda = 0.1
 
         #meta infor

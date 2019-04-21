@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "~/virtual_environments/rl3/bin/python3.6",
+    "python.pythonPath": "/home/quintin/virtual_environments/rl3/bin/python3.6",
     "python.linting.pylintArgs": [
         "--extension-pkg-whitelist=torch, cv2",
         "--ignored-classes=torch",
