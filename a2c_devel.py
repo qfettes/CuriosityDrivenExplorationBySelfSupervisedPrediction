@@ -211,7 +211,11 @@ def train(config):
             episode_rewards *= masks
 
             for index, inf in enumerate(info):
-                max_dist[index] = max((max_dist[index], inf['x_pos']))
+                if inf['x_pos'] < 60000: #there's a simulator glitch? Ignore this value
+                    max_dist[index] = np.max((max_dist[index], inf['x_pos']))
+                
+                if done[index]:
+                    model.save_distance(max_dist[index], (frame_idx-1)*config.rollout*config.num_agents+step*config.num_agents+index)
             max_dist*=masks
 
             rewards = torch.from_numpy(reward.astype(np.float32)).view(-1, 1).to(config.device)
@@ -233,8 +237,6 @@ def train(config):
         model.config.rollouts.after_update()
 
         if frame_idx % print_threshold == 0:
-            model.save_distance(max_dist, frame_idx)
-
             #save_model
             if frame_idx % (print_threshold*10) == 0:
                 model.save_w()
@@ -255,13 +257,13 @@ def train(config):
             if frame_idx % (print_threshold * 1) == 0:
                 try:
                     # Sometimes monitor doesn't properly flush the outputs
-                    plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 1), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
+                    plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 10), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False, action_repeat=config.action_repeat)
                 except IOError:
                     pass
     #final print
     try:
         # Sometimes monitor doesn't properly flush the outputs
-        plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 1), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
+        plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 10), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False, action_repeat=config.action_repeat)
     except IOError:
         pass
     model.save_w()

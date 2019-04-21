@@ -146,7 +146,7 @@ def make_patch_spines_invisible(ax):
     for sp in ax.spines.values():
         sp.set_visible(False)
 
-def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, time=None, save_filename='results.png', ipynb=False):
+def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, time=None, save_filename='results.png', ipynb=False, action_repeat=1):
     matplotlib.rcParams.update({'font.size': 20})
     params = {
         'xtick.labelsize': 20,
@@ -156,6 +156,8 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
     plt.rcParams.update(params)
 
     tx, ty = load_reward_data(folder, smooth, bin_size[0])
+    tx = np.array(tx, dtype=int)/6
+    tx = tx.tolist()
 
     if tx is None or ty is None:
         return
@@ -169,8 +171,9 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
     ticks = tick_fractions * num_steps
     tick_names = ["{:.0e}".format(tick) for tick in ticks]
 
-    fig, ax1 = plt.subplots(1, 1, figsize=(20, 10), subplot_kw = dict(xticks=ticks, xlim=(0, num_steps*1.15), xlabel='Timestep', title=title))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 10), subplot_kw = dict(xticks=ticks, xlim=(0, num_steps*1.15), xlabel='Timestep', title=title))
     ax1.set_xticklabels(tick_names)
+    ax2.set_xticklabels(tick_names)
 
     ax1.set_ylabel('Reward')
 
@@ -182,7 +185,7 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
 
     g1_lines = [p1]
 
-    tx, ty = load_custom_data(folder, 'max_dist.csv', smooth, bin_size[1])
+    '''tx, ty = load_custom_data(folder, 'max_dist.csv', smooth, bin_size[1])
 
     if tx is not None or ty is not None:
         #need to update g2 title if sig data will be included
@@ -195,19 +198,19 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
         g1_lines += [p2]
 
         ax2.yaxis.label.set_color(p2.get_color())
-        ax2.tick_params(axis='y', colors=p2.get_color())
+        ax2.tick_params(axis='y', colors=p2.get_color())'''
 
     ax1.legend(g1_lines, [l.get_label() for l in g1_lines], loc=4) #remake g2 legend because we have a new line
 
     
-    '''#Load td data if it exists
-    tx, ty = load_custom_data(folder, 'td.csv', smooth, bin_size[1])
+    #Load td data if it exists
+    tx, ty = load_custom_data(folder, 'max_dist.csv', smooth, bin_size[1])
 
-    ax2.set_title('Loss vs Timestep')
+    ax2.set_title('Maximum x distance traveled vs Timestep')
 
     if tx is not None or ty is not None:
-        ax2.set_ylabel('Avg .Temporal Difference')
-        p2, = ax2.plot(tx, ty, 'r-', label='Avg. TD')
+        ax2.set_ylabel('X Distance')
+        p2, = ax2.plot(tx, ty, 'r-', label='X distance')
         g2_lines = [p2]
 
         ax2.yaxis.label.set_color(p2.get_color())
@@ -218,7 +221,7 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
     #Load Sigma Parameter Data if it exists
 
     #Load action selection data if it exists
-    tx, ty = load_action_data(folder, smooth, bin_size[3])
+    '''tx, ty = load_action_data(folder, smooth, bin_size[3])
 
     ax3.set_title('Action Selection Frequency(%) vs Timestep')
 

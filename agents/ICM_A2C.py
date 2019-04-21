@@ -176,8 +176,7 @@ class Model(BaseAgent):
     def save_distance(self, max_dist, tstep):
         with open(os.path.join(self.log_dir, 'logs', 'max_dist.csv'), 'a') as f:
             writer = csv.writer(f)
-            for index, dist in enumerate(max_dist):
-                writer.writerow((tstep+index, dist))
+            writer.writerow((tstep, max_dist))
                 
 
     '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):
