@@ -84,7 +84,7 @@ class Model(BaseAgent):
         action_shape = rollouts.actions.size()[-1]
         num_steps, num_processes, _ = rollouts.rewards.size()
 
-        self.config.rollouts.compute_returns(next_value, self.config.GAMMA)
+        rollouts.compute_returns(next_value, self.config.GAMMA)
 
         values, action_log_probs, dist_entropy, states = self.evaluate_actions(
             rollouts.observations[:-1].view(-1, *obs_shape),

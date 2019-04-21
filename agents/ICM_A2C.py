@@ -94,10 +94,10 @@ class Model(A2C_Model):
         with torch.no_grad():
             intr_reward = obs_diff.pow(2).sqrt().sum(dim=1)
             intr_reward = self.config.icm_prediction_beta * intr_reward.view(num_steps, num_processes, 1)
-        self.config.rollouts.rewards += intr_reward.detach()
-        self.config.rollouts.rewards = torch.clamp(self.config.rollouts.rewards, min=-1.0, max=1.0)
+        rollouts.rewards += intr_reward.detach()
+        rollouts.rewards = torch.clamp(rollouts.rewards, min=-1.0, max=1.0)
         
-        self.config.rollouts.compute_returns(next_value, self.config.GAMMA)
+        rollouts.compute_returns(next_value, self.config.GAMMA)
 
         values, action_log_probs, dist_entropy, states = self.evaluate_actions(
             rollouts.observations[:-1].view(-1, *obs_shape),
