@@ -20,13 +20,15 @@ import os
 import glob
 
 from utils.wrappers import make_env_a2c_smb
-from utils.plot import plot_reward
+from utils.plot import plot_all_data
 from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
 from utils.hyperparameters import PolicyConfig
 
 parser = argparse.ArgumentParser(description='RL')
+parser.add_argument('--print-threshold', type=int, default=100,
+					help='print progress and plot every print-threshold timesteps (default: 100)')
 parser.add_argument('--algo', default='a2c',
 					help='algorithm to use: a2c | ppo')
 parser.add_argument('--lr', type=float, default=1e-4,
@@ -143,7 +145,7 @@ def train(config):
     try:
         os.makedirs(log_dir)
     except OSError:
-        files = glob.glob(os.path.join(log_dir, '*.monitor.csv'))
+        files = glob.glob(os.path.join(log_dir, '*.csv'))+glob.glob(os.path.join(log_dir, '*.png'))
         for f in files:
             os.remove(f)
             
@@ -169,6 +171,8 @@ def train(config):
     envs = [make_env_a2c_smb(config.env_id, seed, i, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type) for i in range(config.num_agents)]
     envs = SubprocVecEnv(envs) if config.num_agents > 1 else DummyVecEnv(envs)
 
+    env = make_env_a2c_smb(config.env_id, seed, 16, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type)
+
     model = Model(env=envs, config=config, log_dir=base_dir)
 
     obs = envs.reset()
@@ -181,7 +185,7 @@ def train(config):
 
     start=timer()
 
-    print_threshold = 10
+    print_threshold = args.print_threshold
 
     max_dist = np.zeros(config.num_agents)
     
@@ -198,9 +202,6 @@ def train(config):
     
             obs, reward, done, info = envs.step(cpu_actions)
 
-            for index, inf in enumerate(info):
-                max_dist[index] = max((max_dist[index], inf['x_pos']))
-
             obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
 
             episode_rewards += reward
@@ -208,6 +209,10 @@ def train(config):
             final_rewards *= masks
             final_rewards += (1. - masks) * episode_rewards
             episode_rewards *= masks
+
+            for index, inf in enumerate(info):
+                max_dist[index] = max((max_dist[index], inf['x_pos']))
+            max_dist*=masks
 
             rewards = torch.from_numpy(reward.astype(np.float32)).view(-1, 1).to(config.device)
             masks = torch.from_numpy(masks).to(config.device).view(-1, 1)
@@ -228,6 +233,8 @@ def train(config):
         model.config.rollouts.after_update()
 
         if frame_idx % print_threshold == 0:
+            model.save_distance(max_dist, frame_idx)
+
             #save_model
             if frame_idx % (print_threshold*10) == 0:
                 model.save_w()
@@ -248,13 +255,13 @@ def train(config):
             if frame_idx % (print_threshold * 1) == 0:
                 try:
                     # Sometimes monitor doesn't properly flush the outputs
-                    plot_reward(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=10, smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
+                    plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 1), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
                 except IOError:
                     pass
     #final print
     try:
         # Sometimes monitor doesn't properly flush the outputs
-        plot_reward(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=10, smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
+        plot_all_data(log_dir, config.env_id, 'A2C', config.MAX_FRAMES * config.num_agents * config.rollout, bin_size=(10, 1), smooth=1, time=timedelta(seconds=int(timer()-start)), ipynb=False)
     except IOError:
         pass
     model.save_w()

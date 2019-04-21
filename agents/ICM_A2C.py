@@ -1,6 +1,4 @@
-#intrinsic curiosity a2c
-#TODO: a2c nn with different architecture needed
-
+import os, csv
 import numpy as np
 
 import torch
@@ -174,6 +172,13 @@ class Model(BaseAgent):
         #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
 
         return value_loss.item(), action_loss.item(), dist_entropy.item()
+
+    def save_distance(self, max_dist, tstep):
+        with open(os.path.join(self.log_dir, 'logs', 'max_dist.csv'), 'a') as f:
+            writer = csv.writer(f)
+            for index, dist in enumerate(max_dist):
+                writer.writerow((tstep+index, dist))
+                
 
     '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):
         super(Model, self).save_loss(loss)
