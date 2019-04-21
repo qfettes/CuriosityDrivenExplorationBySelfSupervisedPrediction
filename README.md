@@ -1,5 +1,5 @@
 # Reproduction of "Curiosity-driven Exploration for Deep Reinforcement Learning" with PyTorch
-This is a PyTorch reproduction of the ICML 2017 paper "Curiosity-driven Exploration for Deep Reinforcement Learning."
+This is a PyTorch reproduction of the ICML 2017 paper "Curiosity-driven Exploration for Deep Reinforcement Learning." It uses A2C rather than A3C.
 Look at the original Tensorflow implementation [here](https://github.com/pathak22/noreward-rl).
 
 Requirements: 
