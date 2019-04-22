@@ -119,13 +119,14 @@ class Model(A2C_Model):
         forward_model_loss = 0.5 * obs_diff.pow(2).mean()
         forward_model_loss *= float(icm_obs_pred.size(1)) #lenFeatures=288. Factored out to make hyperparams not depend on it.
 
-        loss = action_loss + self.config.value_loss_weight * value_loss
-        loss *= self.config.icm_lambda
+        pg_loss = action_loss + self.config.value_loss_weight * value_loss
+        #loss *= self.config.icm_lambda
 
-        loss-= ((1.-self.config.icm_loss_beta)*inverse_model_loss)
-        loss-= (self.config.icm_loss_beta*forward_model_loss)
+        icm_loss = 0
+        icm_loss = ((1.-self.config.icm_loss_beta)*inverse_model_loss) + (self.config.icm_loss_beta*forward_model_loss)
+        icm_loss /= self.config.icm_lambda #NOTE: they did this instead of multiplying above in src
 
-        loss -= self.config.entropy_loss_weight * dist_entropy
+        loss = pg_loss - icm_loss - self.config.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 

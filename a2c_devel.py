@@ -49,12 +49,6 @@ parser.add_argument('--num-processes', type=int, default=20,
 					help='how many training CPU processes to use (default: 20)')
 parser.add_argument('--num-steps', type=int, default=20,
 					help='number of forward steps in A2C (default: 20)')
-parser.add_argument('--ppo-epoch', type=int, default=3,
-					help='number of ppo epochs (default: 3)')
-parser.add_argument('--num-mini-batch', type=int, default=32,
-					help='number of batches for ppo (default: 32)')
-parser.add_argument('--clip-param', type=float, default=0.1,
-					help='ppo clip parameter (default: 0.1)')
 parser.add_argument('--num-frames', type=int, default=1.5e6,
 					help='number of frames to train (default: 1.5e6)')
 parser.add_argument('--env-name', default='SuperMarioBros-1-1-v0',
@@ -110,11 +104,6 @@ config.reward_type = args.reward_type
 #Recurrent control
 config.recurrent_policy_grad = args.recurrent_policy
 config.gru_size = args.gru_size
-
-#ppo control
-config.ppo_epoch = args.ppo_epoch
-config.num_mini_batch = args.num_mini_batch
-config.ppo_clip_param = args.clip_param
 
 #a2c control
 config.num_agents=args.num_processes
