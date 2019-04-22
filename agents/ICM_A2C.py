@@ -122,7 +122,6 @@ class Model(A2C_Model):
         pg_loss = action_loss + self.config.value_loss_weight * value_loss
         #loss *= self.config.icm_lambda
 
-        icm_loss = 0
         icm_loss = ((1.-self.config.icm_loss_beta)*inverse_model_loss) + (self.config.icm_loss_beta*forward_model_loss)
         icm_loss /= self.config.icm_lambda #NOTE: they did this instead of multiplying above in src
 
