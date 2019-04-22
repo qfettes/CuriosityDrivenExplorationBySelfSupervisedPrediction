@@ -74,6 +74,8 @@ parser.add_argument('--inference', action='store_true', default=False,
 					help='Inference saved model')
 parser.add_argument('--deterministic-repeat', action='store_true', default=False,
 					help='Repeat actions exactly action-repeat times')
+parser.add_argument('--render', action='store_true', default=False,
+                    help='Render the inference epsiode (default: False')
 args = parser.parse_args()
 
 if args.algo == 'icm':
@@ -235,10 +237,10 @@ def train(config):
             
             #print
             end = timer()
-            total_num_steps = (frame_idx + 1) * config.num_agents * config.rollout * config.action_repeat
+            total_num_steps = (frame_idx + 1) * config.num_agents * config.rollout
             print("Updates {}, num timesteps {}, FPS {}, max distance {:.1f}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, entropy {:.5f}, value loss {:.5f}, policy loss {:.5f}".
                 format(frame_idx, total_num_steps,
-                       int(total_num_steps / (end - start)),
+                       int(total_num_steps*config.action_repeat / (end - start)),
                        np.mean(max_dist),
                        np.mean(final_rewards),
                        np.median(final_rewards),
@@ -280,6 +282,10 @@ def test(config):
     model.load_w()
 
     obs = env.reset()
+    
+    if args.render:
+        env.render()
+    
     obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
     state = model.config.rollouts.states[0, 0].view(1, -1)
     mask = model.config.rollouts.masks[0, 0].view(1, -1)
@@ -302,6 +308,9 @@ def test(config):
             
         cpu_action = action.view(-1).cpu().numpy()
         obs, reward, done, info = env.step(cpu_action)
+
+        if args.render:
+            env.render()
 
         obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
 
