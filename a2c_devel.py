@@ -233,7 +233,7 @@ def train(config):
             
             #print
             end = timer()
-            total_num_steps = (frame_idx + 1) * config.num_agents * config.rollout
+            total_num_steps = (frame_idx + 1) * config.num_agents * config.rollout * config.action_repeat
             print("Updates {}, num timesteps {}, FPS {}, max distance {:.1f}, mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}, entropy {:.5f}, value loss {:.5f}, policy loss {:.5f}".
                 format(frame_idx, total_num_steps,
                        int(total_num_steps / (end - start)),
