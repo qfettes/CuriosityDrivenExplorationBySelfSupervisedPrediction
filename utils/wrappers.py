@@ -164,7 +164,7 @@ class smb_stack_and_repeat(gym.Wrapper):
         else:
             rep = np.random.randint(np.max((self.action_repeat-1, 1)), self.action_repeat+2)
         
-        for i in range(1, self.action_repeat):
+        for i in range(1, rep):
             if not done:
                 ob, reward, done, info = self.env.step(action)
                 total_reward += reward
