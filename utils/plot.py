@@ -156,7 +156,7 @@ def plot_all_data(folder, game, name, num_steps, bin_size=(10, 1), smooth=1, tim
     plt.rcParams.update(params)
 
     tx, ty = load_reward_data(folder, smooth, bin_size[0])
-    tx = np.array(tx, dtype=int)/6
+    tx = np.array(tx, dtype=int)/action_repeat
     tx = tx.tolist()
 
     if tx is None or ty is None:
