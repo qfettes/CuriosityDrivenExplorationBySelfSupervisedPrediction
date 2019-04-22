@@ -37,7 +37,7 @@ class BaseAgent(object):
 
         if os.path.isfile(fname_model):
             self.model.load_state_dict(torch.load(fname_model))
-            self.target_model.load_state_dict(self.model.state_dict())
+            #self.target_model.load_state_dict(self.model.state_dict())
 
         if os.path.isfile(fname_optim):
             self.optimizer.load_state_dict(torch.load(fname_optim))
