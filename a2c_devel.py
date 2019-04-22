@@ -76,6 +76,8 @@ parser.add_argument('--icm-prediction-beta', type=float, default=0.2,
 					help='Weight used by ICM to trade off forward/backward model optim (default: 0.2)')
 parser.add_argument('--icm-lambda', type=float, default=0.1,
 					help='Weight placed by ICM of PG loss (default: 0.1)')
+parser.add_argument('--inference', action='store_true', default=False,
+					help='Inference saved model')
 args = parser.parse_args()
 
 if args.algo == 'icm':
@@ -174,8 +176,6 @@ def train(config):
     envs = [make_env_a2c_smb(config.env_id, seed, i, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type) for i in range(config.num_agents)]
     envs = SubprocVecEnv(envs) if config.num_agents > 1 else DummyVecEnv(envs)
 
-    env = make_env_a2c_smb(config.env_id, seed, 16, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type)
-
     model = Model(env=envs, config=config, log_dir=base_dir)
 
     obs = envs.reset()
@@ -270,5 +270,72 @@ def train(config):
     model.save_w()
     envs.close()
     
+def test(config):
+    base_dir = os.path.join('./results/', args.algo, model_architecture, config.env_id)
+    log_dir = os.path.join(base_dir, 'logs/')
+    model_dir = os.path.join(base_dir, 'saved_model/')
+
+    seed = np.random.randint(0, int(1e6))
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+
+    env = [make_env_a2c_smb(config.env_id, seed, config.num_agents+1, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type)]
+    env = DummyVecEnv(env)
+
+
+    model = Model(env=env, config=config, log_dir=base_dir)
+    model.load_w()
+
+    obs = env.reset()
+    obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
+    state = model.config.rollouts.states[0, 0].view(1, -1)
+    mask = model.config.rollouts.masks[0, 0].view(1, -1)
+    
+    episode_rewards = np.zeros(1, dtype=np.float)
+    final_rewards = np.zeros(1, dtype=np.float)
+
+    start=timer()
+
+    print_threshold = args.print_threshold
+
+    max_dist = np.zeros(1, dtype=np.float)
+
+    done = False
+    tstep=0
+    while not done:
+        tstep+=1
+        with torch.no_grad():
+                value, action, action_log_prob, state = model.get_action(obs, state, mask)
+            
+        cpu_action = action.view(-1).cpu().numpy()
+        obs, reward, done, info = env.step(cpu_action)
+
+        obs = torch.from_numpy(obs.astype(np.float32)).to(config.device)
+
+        episode_rewards += reward
+        mask = 1. - done.astype(np.float32)
+        final_rewards += (1. - mask) * episode_rewards
+
+        for index, inf in enumerate(info):
+            if inf['x_pos'] < 60000: #there's a simulator glitch? Ignore this value
+                max_dist[index] = np.max((max_dist[index], inf['x_pos']))
+
+        mask = torch.from_numpy(mask).to(config.device).view(-1, 1)
+        
+    #print
+    end = timer()
+    total_num_steps = tstep
+    print("Num timesteps {}, FPS {}, Distance {:.1f}, Reward {:.1f}".
+        format(total_num_steps,
+                int(total_num_steps / (end - start)),
+                np.mean(max_dist),
+                np.mean(final_rewards)))
+            
+    
 if __name__=='__main__':
-    train(config)
+    if not args.inference:
+        train(config)
+    else:
+        test(config)
