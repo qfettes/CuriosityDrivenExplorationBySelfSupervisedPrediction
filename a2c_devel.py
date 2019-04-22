@@ -72,6 +72,8 @@ parser.add_argument('--icm-lambda', type=float, default=0.1,
 					help='Weight placed by ICM of PG loss (default: 0.1)')
 parser.add_argument('--inference', action='store_true', default=False,
 					help='Inference saved model')
+parser.add_argument('--deterministic-repeat', action='store_true', default=False,
+					help='Repeat actions exactly action-repeat times')
 args = parser.parse_args()
 
 if args.algo == 'icm':
@@ -162,7 +164,7 @@ def train(config):
 
     #torch.set_num_threads(1)
 
-    envs = [make_env_a2c_smb(config.env_id, seed, i, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, reward_type=config.reward_type) for i in range(config.num_agents)]
+    envs = [make_env_a2c_smb(config.env_id, seed, i, log_dir, stack_frames=config.stack_frames, action_repeat=config.action_repeat, deterministic_repeat=args.deterministic_repeat, reward_type=config.reward_type) for i in range(config.num_agents)]
     envs = SubprocVecEnv(envs) if config.num_agents > 1 else DummyVecEnv(envs)
 
     model = Model(env=envs, config=config, log_dir=base_dir)
