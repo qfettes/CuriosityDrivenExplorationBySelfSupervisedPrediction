@@ -47,7 +47,7 @@ def make_env_a2c_atari(env_id, seed, rank, log_dir):
         return env
     return _thunk
 
-def make_env_a2c_smb(env_id, seed, rank, log_dir, stack_frames=4, action_repeat=6, deterministic_repeat=False, reward_type='none'):
+def make_env_a2c_smb(env_id, seed, rank, log_dir, stack_frames=4, action_repeat=6, reward_type='none', sticky=0.):
     def _thunk():
         
         env = gym_super_mario_bros.make(env_id)
@@ -61,7 +61,7 @@ def make_env_a2c_smb(env_id, seed, rank, log_dir, stack_frames=4, action_repeat=
         env = ProcessFrameMario(env, reward_type=reward_type)
         env = smb_warp_frame(env)
         env = smb_scale_frame(env)
-        env = smb_stack_and_repeat(env, stack_frames, action_repeat, deterministic_repeat)
+        env = smb_stack_and_repeat(env, stack_frames, action_repeat, sticky)
         env = WrapPyTorch(env)
 
         return env
@@ -131,7 +131,7 @@ class smb_scale_frame(gym.ObservationWrapper):
         return np.array(observation).astype(np.float32) / 255.0
 
 class smb_stack_and_repeat(gym.Wrapper):
-    def __init__(self, env, k, action_repeat, deterministic_repeat):
+    def __init__(self, env, k, action_repeat, sticky):
         """Stack k last frames.
 
         Returns lazy array, which is much more memory efficient.
@@ -143,8 +143,9 @@ class smb_stack_and_repeat(gym.Wrapper):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.action_repeat = action_repeat
-        self.deterministic_repeat = deterministic_repeat
         self.frames = deque([], maxlen=k)
+        self.sticky = sticky
+        self.prev_action = None
         shp = env.observation_space.shape
         self.observation_space = spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * k), dtype=np.uint8)
 
@@ -155,18 +156,21 @@ class smb_stack_and_repeat(gym.Wrapper):
         return self._get_ob()
 
     def step(self, action): #pylint: disable=method-hidden
-        ob, reward, done, info = self.env.step(action)
+        is_sticky = np.random.rand()
+        if is_sticky >= self.sticky or self.prev_action is None:
+            self.prev_action = action
+        ob, reward, done, info = self.env.step(self.prev_action)
+        
         self.frames.append(ob)
         total_reward = reward
-
-        if self.deterministic_repeat:
-            rep = self.action_repeat
-        else:
-            rep = np.random.randint(np.max((self.action_repeat-1, 1)), self.action_repeat+2)
         
-        for i in range(1, rep):
+        for i in range(1, self.action_repeat):
             if not done:
-                ob, reward, done, info = self.env.step(action)
+                is_sticky = np.random.rand()
+                if is_sticky >= self.sticky or self.prev_action is None:
+                    self.prev_action = action
+                ob, reward, done, info = self.env.step(self.prev_action)
+
                 total_reward += reward
                 self.frames.append(ob)
             else:
@@ -176,6 +180,33 @@ class smb_stack_and_repeat(gym.Wrapper):
     def _get_ob(self):
         assert len(self.frames) == self.k
         return LazyFrames(list(self.frames))
+
+
+'''class NormalizedEnv(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(NormalizedEnv, self).__init__(env)
+        self.state_mean = 0
+        self.state_std = 0
+        self.alpha = 0.9999
+        self.num_steps = 0
+
+    def observation(self, observation):
+        if observation is not None:    # for future meta implementation
+            self.num_steps += 1
+            self.state_mean = self.state_mean * self.alpha + \
+                observation.mean() * (1 - self.alpha)
+            self.state_std = self.state_std * self.alpha + \
+                observation.std() * (1 - self.alpha)
+
+            unbiased_mean = self.state_mean / (1 - pow(self.alpha, self.num_steps))
+            unbiased_std = self.state_std / (1 - pow(self.alpha, self.num_steps))
+
+            return (observation - unbiased_mean) / (unbiased_std + 1e-8)
+        else:
+            return observation
+
+    def change_level(self, level):
+        self.env.change_level(level)'''
 
 ACTIONS = [
     ['NOOP'],
