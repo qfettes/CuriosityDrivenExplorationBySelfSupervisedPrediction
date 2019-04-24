@@ -125,7 +125,7 @@ class Model(A2C_Model):
         icm_loss = ((1.-self.config.icm_loss_beta)*inverse_model_loss) + (self.config.icm_loss_beta*forward_model_loss)
         icm_loss /= self.config.icm_lambda #NOTE: they did this instead of multiplying above in src
 
-        loss = pg_loss - icm_loss - self.config.entropy_loss_weight * dist_entropy
+        loss = pg_loss + icm_loss - self.config.entropy_loss_weight * dist_entropy
 
         return loss, action_loss, value_loss, dist_entropy
 
