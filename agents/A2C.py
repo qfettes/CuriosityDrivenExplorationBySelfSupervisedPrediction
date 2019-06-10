@@ -1,23 +1,25 @@
 import numpy as np
 
+import os
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
 import torch.nn.functional as F
 
 from agents.BaseAgent import BaseAgent
-from networks.networks import ActorCriticAtari 
+from networks.networks import ActorCriticSMB
 from utils.RolloutStorage import RolloutStorage
 
 from timeit import default_timer as timer
 
 class Model(BaseAgent):
-    def __init__(self, static_policy=False, env=None, config=None, log_dir='/tmp/gym'):
-        super(Model, self).__init__(config=config, env=env, log_dir=log_dir)
+    def __init__(self, static_policy=False, env=None, config=None, log_dir='/tmp/gym', tb_writer=None):
+        super(Model, self).__init__(config=config, env=env, log_dir=log_dir, tb_writer=tb_writer)
         self.config = config
         self.static_policy = static_policy
         self.num_feats = env.observation_space.shape
-        self.num_actions = env.action_space.n
+        self.num_actions = env.action_space.n * len(config.adaptive_repeat)
         self.env = env
 
         self.declare_networks()
@@ -45,7 +47,7 @@ class Model(BaseAgent):
 
 
     def declare_networks(self):
-        self.model = ActorCriticAtari(self.num_feats, self.num_actions, self.config.recurrent_policy_grad, self.config.gru_size)
+        self.model = ActorCriticSMB(self.num_feats, self.num_actions, self.config.recurrent_policy_grad, self.config.gru_size)
         
 
     def get_action(self, s, states, masks, deterministic=False):
@@ -79,7 +81,7 @@ class Model(BaseAgent):
 
         return values
 
-    def compute_loss(self, rollouts, next_value):
+    def compute_loss(self, rollouts, next_value, frame):
         obs_shape = rollouts.observations.size()[2:]
         action_shape = rollouts.actions.size()[-1]
         num_steps, num_processes, _ = rollouts.rewards.size()
@@ -103,25 +105,57 @@ class Model(BaseAgent):
         loss = action_loss + self.config.value_loss_weight * value_loss
         loss -= self.config.entropy_loss_weight * dist_entropy
 
-        return loss, action_loss, value_loss, dist_entropy
+        self.tb_writer.add_scalar('Loss/Total Loss', loss.item(), frame)
+        self.tb_writer.add_scalar('Loss/Policy Loss', action_loss.item(), frame)
+        self.tb_writer.add_scalar('Loss/Value Loss', value_loss.item(), frame)
+        self.tb_writer.add_scalar('Loss/Forward Dynamics Loss', 0., frame)
+        self.tb_writer.add_scalar('Loss/Inverse Dynamics Loss', 0., frame)
 
-    def update(self, rollout, next_value):
-        loss, action_loss, value_loss, dist_entropy = self.compute_loss(rollout, next_value)
+        self.tb_writer.add_scalar('Policy/Entropy', dist_entropy.item(), frame)
+        self.tb_writer.add_scalar('Policy/Value Estimate', values.detach().mean().item(), frame)
+
+        self.tb_writer.add_scalar('Learning/Learning Rate', np.mean([param_group['lr'] for param_group in self.optimizer.param_groups]), frame)
+
+
+        return loss, action_loss, value_loss, dist_entropy, 0.
+
+    def update(self, rollout, next_value, frame):
+        loss, action_loss, value_loss, dist_entropy, dynamics_loss = self.compute_loss(rollout, next_value, frame)
 
         self.optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_norm_max)
         self.optimizer.step()
 
-        #self.save_loss(loss.item(), action_loss.item(), value_loss.item(), dist_entropy.item())
+        grad_norm = 0.
+        grad_count = 0.
+        for param in self.model.parameters():
+            grad_norm += torch.sum(param.grad.abs()).item()
+            grad_count += param.grad.numel()
+        grad_norm /= grad_count
+        #self.save_generic_stat(grad_norm, frame, 'grad_norms')
+        self.tb_writer.add_scalar('Learning/Grad Norm', grad_norm, frame)
 
-        return value_loss.item(), action_loss.item(), dist_entropy.item()
+        return value_loss.item(), action_loss.item(), dist_entropy.item(), dynamics_loss
 
-    def save_distance(self, max_dist, tstep):
-        pass
+    def save_w(self, best=False):
+      if best:
+        torch.save(self.model.state_dict(), os.path.join(self.log_dir, 'best', 'model.dump'))
+        torch.save(self.optimizer.state_dict(), os.path.join(self.log_dir, 'best', 'optim.dump'))
+      
+      torch.save(self.model.state_dict(), os.path.join(self.log_dir, 'saved_model', 'model.dump'))
+      torch.save(self.optimizer.state_dict(), os.path.join(self.log_dir, 'saved_model', 'optim.dump'))
 
-    '''def save_loss(self, loss, policy_loss, value_loss, entropy_loss):
-        super(Model, self).save_loss(loss)
-        self.policy_losses.append(policy_loss)
-        self.value_losses.append(value_loss)
-        self.entropy_losses.append(entropy_loss)'''
+    def load_w(self, best=False):
+      if best:
+        fname_model = os.path.join(self.log_dir, 'best', 'model.dump')
+        fname_optim = os.path.join(self.log_dir, 'best', 'optim.dump')
+      else:
+        fname_model = os.path.join(self.log_dir, 'saved_model', 'model.dump')
+        fname_optim = os.path.join(self.log_dir, 'saved_model', 'optim.dump')
+
+      if os.path.isfile(fname_model):
+        self.model.load_state_dict(torch.load(fname_model))
+
+      if os.path.isfile(fname_optim):
+        self.optimizer.load_state_dict(torch.load(fname_optim))

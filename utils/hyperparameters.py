@@ -10,6 +10,11 @@ class PolicyConfig(object):
         self.icm_loss_beta = 0.2
         self.icm_prediction_beta = 0.01
         self.icm_lambda = 0.1
+        self.icm_minibatches = 32
+
+        #noisy nets
+        self.noisy_nets=False
+        self.sigma_init=0.5
 
         #meta infor
         self.algo = None
@@ -18,7 +23,7 @@ class PolicyConfig(object):
         #POLICY GRADIENT EXCLUSIVE PARAMETERS
         self.recurrent_policy_grad = False
         self.stack_frames = 4
-        self.action_repeat = 6
+        self.adaptive_repeat = [4]
         self.gru_size = 512
 
         #PPO controls
@@ -38,10 +43,6 @@ class PolicyConfig(object):
         self.grad_norm_max = 0.5
         self.GAMMA=0.99
         self.LR=1e-4
-
-        #Noisy Nets
-        self.USE_NOISY_NETS=False
-        self.SIGMA_INIT=0.5
 
         #Learning control variables
         self.MAX_FRAMES=100000

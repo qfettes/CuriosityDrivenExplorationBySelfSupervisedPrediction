@@ -8,12 +8,13 @@ import torch.optim as optim
 
 
 class BaseAgent(object):
-    def __init__(self, config, env, log_dir='/tmp/gym'):
+    def __init__(self, config, env, log_dir='/tmp/gym', tb_writer=None):
         self.model=None
         self.target_model=None
         self.optimizer = None
 
         self.log_dir = log_dir
+        self.tb_writer=tb_writer
 
         self.rewards = []
 
@@ -63,11 +64,6 @@ class BaseAgent(object):
                     writer = csv.writer(f)
                     writer.writerow((tstep, sum_/count))
 
-    def save_td(self, td, tstep):
-        with open(os.path.join(self.log_dir, 'td.csv'), 'a') as f:
-            writer = csv.writer(f)
-            writer.writerow((tstep, td))
-
     def save_reward(self, reward):
         self.rewards.append(reward)
 
@@ -79,11 +75,16 @@ class BaseAgent(object):
                 writer.writerow(list([tstep]+self.action_selections))
             self.action_selections = [0 for _ in range(len(self.action_selections))]
     
-    def count_model_parameters(self):
-        if self.model is None:
+    def count_parameters(self, model):
+        if model is None:
             return 0
         else:
             total = 0
-            for name, param in self.model.state_dict().items():
+            for name, param in model.state_dict().items():
                 total += np.prod(param.shape)
             return total
+
+    def save_generic_stat(self, stat, tstep, stat_name):
+        with open(os.path.join(self.log_dir, 'logs', stat_name+'.csv'), 'a') as f:
+            writer = csv.writer(f)
+            writer.writerow((tstep, stat))

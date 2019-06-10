@@ -3,9 +3,11 @@ from collections import deque
 
 import gym
 from gym import spaces
+from gym import wrappers
 from gym.spaces.box import Box
 
 import gym_super_mario_bros
+from gym_super_mario_bros.actions import SIMPLE_MOVEMENT, COMPLEX_MOVEMENT
 from nes_py.wrappers import BinarySpaceToDiscreteSpaceEnv
 
 import os, cv2
@@ -47,39 +49,43 @@ def make_env_a2c_atari(env_id, seed, rank, log_dir):
         return env
     return _thunk
 
-def make_env_a2c_smb(env_id, seed, rank, log_dir, stack_frames=4, action_repeat=6, reward_type='none', sticky=0.):
+def make_env_a2c_smb(env_id, seed, rank, log_dir, dim=42, stack_frames=4, adaptive_repeat=[6], reward_type='none', sticky=0., vid=False, base_dir=''):
     def _thunk():
         
         env = gym_super_mario_bros.make(env_id)
         env.seed(seed + rank)
+        if vid:
+            env = wrappers.Monitor(env, os.path.join(base_dir, 'video'), force=True)
 
-        env = BinarySpaceToDiscreteSpaceEnv(env, ACTIONS)
+        env = BinarySpaceToDiscreteSpaceEnv(env, COMPLEX_MOVEMENT)
 
         if log_dir is not None:
             env = bench.Monitor(env, os.path.join(log_dir, str(rank)))
 
-        env = ProcessFrameMario(env, reward_type=reward_type)
-        env = smb_warp_frame(env)
+        env = ProcessFrameMario(env, reward_type=reward_type, dim=dim)
+        env = smb_warp_frame(env, dim=dim)
         env = smb_scale_frame(env)
-        env = smb_stack_and_repeat(env, stack_frames, action_repeat, sticky)
+        env = smb_stack_and_repeat(env, stack_frames, adaptive_repeat, sticky)
         env = WrapPyTorch(env)
 
         return env
     return _thunk
 
 class ProcessFrameMario(gym.Wrapper):
-    def __init__(self, env=None, reward_type=None):
+    def __init__(self, env=None, reward_type=None, dim=42):
         super(ProcessFrameMario, self).__init__(env)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(1, 42, 42), dtype=np.uint8)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(1, dim, dim), dtype=np.uint8)
         self.prev_time = 400
         self.prev_stat = 0
         self.prev_score = 0
         self.prev_dist = 40
-        self.max_dist = 3000.
+        self.max_dist = 3156.
         self.reward_type = reward_type
 
+        self.curr_score = 0.
+
     def step(self, action): #pylint: disable=method-hidden
-        obs, _, done, info = self.env.step(action)
+        obs, rew, done, info = self.env.step(action)
 
         if self.reward_type == 'none':
             reward = 0.
@@ -87,11 +93,17 @@ class ProcessFrameMario(gym.Wrapper):
             reward = 0. 
             if done: 
                 if info['flag_get']:
-                    reward = 1.
+                    reward = 100. #note tailored for a gamma of 0.99
         elif self.reward_type == 'dense':
-            reward = float(info['x_pos']) - self.prev_dist
-            reward /= self.max_dist
-            self.prev_dist = float(info['x_pos'])
+            reward = rew
+            reward += (info["score"] - self.curr_score) / 40.
+            self.curr_score = info["score"]
+            if done:
+                if info["flag_get"]:
+                    reward += 50
+                else:
+                    reward -= 50
+            reward = reward / 10.
         else: 
             return None
 
@@ -108,11 +120,11 @@ class ProcessFrameMario(gym.Wrapper):
         self.env.change_level(level)
 
 class smb_warp_frame(gym.ObservationWrapper):
-    def __init__(self, env):
-        """Warp frames to 42x42 as done in the Nature paper and later work."""
+    def __init__(self, env, dim=42):
+        """Warp frames to dim x dim as done in the Nature paper and later work."""
         gym.ObservationWrapper.__init__(self, env)
-        self.width = 42
-        self.height = 42
+        self.width = dim
+        self.height = dim
         self.observation_space = spaces.Box(low=0, high=255,
             shape=(self.height, self.width, 1), dtype=np.uint8)
 
@@ -131,7 +143,7 @@ class smb_scale_frame(gym.ObservationWrapper):
         return np.array(observation).astype(np.float32) / 255.0
 
 class smb_stack_and_repeat(gym.Wrapper):
-    def __init__(self, env, k, action_repeat, sticky):
+    def __init__(self, env, k, adaptive_repeat, sticky):
         """Stack k last frames.
 
         Returns lazy array, which is much more memory efficient.
@@ -142,7 +154,8 @@ class smb_stack_and_repeat(gym.Wrapper):
         """
         gym.Wrapper.__init__(self, env)
         self.k = k
-        self.action_repeat = action_repeat
+        self.adaptive_repeat = adaptive_repeat
+        self.num_actions = env.action_space.n
         self.frames = deque([], maxlen=k)
         self.sticky = sticky
         self.prev_action = None
@@ -155,7 +168,10 @@ class smb_stack_and_repeat(gym.Wrapper):
             self.frames.append(ob)
         return self._get_ob()
 
-    def step(self, action): #pylint: disable=method-hidden
+    def step(self, a): #pylint: disable=method-hidden
+        repeat_len = a // self.num_actions
+        action = a % self.num_actions
+
         is_sticky = np.random.rand()
         if is_sticky >= self.sticky or self.prev_action is None:
             self.prev_action = action
@@ -164,7 +180,7 @@ class smb_stack_and_repeat(gym.Wrapper):
         self.frames.append(ob)
         total_reward = reward
         
-        for i in range(1, self.action_repeat):
+        for i in range(1, self.adaptive_repeat[repeat_len]):
             if not done:
                 is_sticky = np.random.rand()
                 if is_sticky >= self.sticky or self.prev_action is None:
